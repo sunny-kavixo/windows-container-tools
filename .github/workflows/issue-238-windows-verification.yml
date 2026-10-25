@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   compare:
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

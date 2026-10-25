@@ -43,8 +43,11 @@ function Invoke-Recorded {
 
     Push-Location $WorkingDirectory
     try {
-        & $FilePath @ArgumentList 2>&1 | Tee-Object -FilePath $LogPath
-        return $LASTEXITCODE
+        & $FilePath @ArgumentList 2>&1 |
+            Tee-Object -FilePath $LogPath |
+            ForEach-Object { Write-Host $_ }
+        $ExitCode = $LASTEXITCODE
+        return $ExitCode
     }
     finally {
         Pop-Location
