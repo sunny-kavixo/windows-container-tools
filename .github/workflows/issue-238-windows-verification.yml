@@ -1,0 +1,55 @@
+name: Issue 238 Windows verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch exact PR head
+        shell: pwsh
+        run: git fetch https://github.com/microsoft/windows-container-tools.git refs/pull/235/head
+
+      - name: Locate Visual Studio
+        id: vs
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation not found' }
+          "root=$vs" >> $env:GITHUB_OUTPUT
+
+      - name: Bootstrap vcpkg dependency
+        shell: pwsh
+        run: |
+          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
+            & C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+          & C:\vcpkg\vcpkg.exe install nlohmann-json:x64-windows-static --no-binarycaching
+
+      - name: Compare baseline and PR head
+        shell: pwsh
+        run: |
+          .\scripts\verify-issue-238.ps1 `
+            -Repository $env:GITHUB_WORKSPACE `
+            -VcpkgRoot C:\vcpkg `
+            -VisualStudioRoot '${{ steps.vs.outputs.root }}' `
+            -Iterations 3 `
+            -OutputRoot (Join-Path $env:RUNNER_TEMP 'issue-238-results')
+
+      - name: Upload complete logs and TRX files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-238-windows-results
+          path: ${{ runner.temp }}\issue-238-results
+          if-no-files-found: warn
+          retention-days: 14
