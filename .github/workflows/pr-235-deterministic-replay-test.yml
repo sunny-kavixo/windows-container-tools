@@ -61,11 +61,18 @@ jobs:
         run: |
           $vstest = Join-Path '${{ steps.vs.outputs.root }}' 'Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe'
           1..3 | ForEach-Object {
+            $trxName = "deterministic-replay-$_.trx"
             & $vstest LogMonitor\build\Release\LogMonitorTests.dll `
-              '/TestCaseFilter:FullyQualifiedName~EventMonitorTests.TestShutdownDuringReplay' `
-              "/Logger:trx;LogFileName=deterministic-replay-$_.trx" `
+              '/TestCaseFilter:FullyQualifiedName~TestShutdownDuringReplay' `
+              "/Logger:trx;LogFileName=$trxName" `
               "/ResultsDirectory:$env:RUNNER_TEMP\results"
             if ($LASTEXITCODE -ne 0) { throw "VSTest iteration $_ failed with exit code $LASTEXITCODE" }
+            [xml]$trx = Get-Content (Join-Path "$env:RUNNER_TEMP\results" $trxName) -Raw
+            $counters = $trx.TestRun.ResultSummary.Counters
+            if ([int]$counters.total -ne 1 -or [int]$counters.executed -ne 1 -or
+                [int]$counters.passed -ne 1 -or [int]$counters.failed -ne 0) {
+              throw "VSTest iteration $_ did not execute and pass exactly one test"
+            }
           }
 
       - name: Upload test results
