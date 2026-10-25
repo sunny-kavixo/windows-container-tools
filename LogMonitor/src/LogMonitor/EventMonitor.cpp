@@ -441,12 +441,6 @@ EventMonitor::EnumerateResults(
         //
         for (DWORD i = 0; i < dwReturned; i++)
         {
-            status = CheckForStop();
-            if (status != ERROR_SUCCESS)
-            {
-                goto cleanup;
-            }
-
 #ifdef LOGMONITOR_TESTS
             if (m_replayTestHooks != nullptr)
             {

@@ -3,7 +3,7 @@ name: PR 235 deterministic replay test
 on:
   push:
     branches:
-      - pr-235-deterministic-replay-test
+      - pr-235-deterministic-*
 
 permissions:
   contents: read
