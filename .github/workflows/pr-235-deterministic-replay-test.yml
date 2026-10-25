@@ -1,0 +1,77 @@
+name: PR 235 deterministic replay test
+
+on:
+  push:
+    branches:
+      - pr-235-deterministic-replay-test
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install cpplint==2.0.2
+      - name: Lint changed C++ sources
+        working-directory: LogMonitor
+        run: |
+          python -m cpplint \
+            LogMonitorTests/EventMonitorTests.cpp \
+            LogMonitorTests/pch.h \
+            src/LogMonitor/EventMonitor.cpp \
+            src/LogMonitor/EventMonitor.h
+
+  windows-test:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate Visual Studio
+        id: vs
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation not found' }
+          "root=$vs" >> $env:GITHUB_OUTPUT
+
+      - name: Bootstrap vcpkg dependency
+        shell: pwsh
+        run: |
+          if (-not (Test-Path C:\vcpkg\vcpkg.exe)) {
+            & C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          }
+          & C:\vcpkg\vcpkg.exe install nlohmann-json:x64-windows-static --no-binarycaching
+
+      - name: Configure and build tests
+        shell: pwsh
+        run: |
+          cmake -S LogMonitor -B LogMonitor\build -G 'Visual Studio 17 2022' -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          cmake --build LogMonitor\build --config Release --target LogMonitorTests --parallel 4
+
+      - name: Run deterministic shutdown test three times
+        shell: pwsh
+        run: |
+          $vstest = Join-Path '${{ steps.vs.outputs.root }}' 'Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe'
+          1..3 | ForEach-Object {
+            & $vstest LogMonitor\build\Release\LogMonitorTests.dll `
+              '/TestCaseFilter:FullyQualifiedName~EventMonitorTests.TestShutdownDuringReplay' `
+              "/Logger:trx;LogFileName=deterministic-replay-$_.trx" `
+              "/ResultsDirectory:$env:RUNNER_TEMP\results"
+            if ($LASTEXITCODE -ne 0) { throw "VSTest iteration $_ failed with exit code $LASTEXITCODE" }
+          }
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-replay-results
+          path: ${{ runner.temp }}/results
+          if-no-files-found: warn
